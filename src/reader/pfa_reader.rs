@@ -1,11 +1,11 @@
 use std::{
     collections::VecDeque,
-    io::{Cursor, Read, Seek},
+    io::{Read, Seek},
 };
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::{writer, PfaError};
+use crate::PfaError;
 
 #[derive(Debug)]
 struct PfaHeader {
@@ -54,6 +54,18 @@ impl<T: Read + Seek> PfaReader<T> {
         })
     }
 
+    pub fn get_name(&self) -> &str {
+        &self.header.name
+    }
+
+    pub fn get_version(&self) -> u8 {
+        self.header.version
+    }
+
+    pub fn get_extra_data(&self) -> &[u8] {
+        &self.header.extra_data
+    }
+
     pub fn get_file(&mut self, path: &str) -> Option<Vec<u8>> {
         let mut parts = path.split('/').collect::<VecDeque<_>>();
         if parts.is_empty() {
@@ -77,9 +89,9 @@ impl<T: Read + Seek> PfaReader<T> {
                     (PfaSlice::Data { offset, size }, true) => {
                         self.data
                             .seek(std::io::SeekFrom::Start(self.data_idx as u64 + offset))
-                            .unwrap();
+                            .ok()?;
                         let mut buf = vec![0; *size as usize];
-                        self.data.read_exact(&mut buf).unwrap();
+                        self.data.read_exact(&mut buf).ok()?;
                         return Some(buf);
                     }
                     (PfaSlice::Catalog { offset, size }, false) => {

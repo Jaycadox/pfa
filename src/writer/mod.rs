@@ -1,5 +1,3 @@
-use thiserror::Error;
-
 pub mod pfa_builder;
 mod pfa_writer;
 
