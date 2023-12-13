@@ -2,7 +2,7 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use super::PfaError;
+use crate::PfaError;
 
 #[derive(Debug)]
 pub struct PfaFile {
@@ -124,6 +124,7 @@ impl PfaWriter {
         struct CatalogState<'a> {
             writer: &'a mut PfaWriter,
             catalog_len: u64,
+            catalog_start: u64,
         }
 
         let mut file = PfaPath::File(PfaFile::new("".to_string(), vec![]).ok_or(
@@ -141,21 +142,23 @@ impl PfaWriter {
             self.write_catalog_entry(&name, &PfaCatalogSlice { index: 1, size })?;
             catalog_len += 1;
         }
-
+        let catalog_start_idx = self.buf.position();
+        const ENTRY_SIZE: usize = 48;
         fn write_catalog_inner(state: &mut CatalogState, path: &PfaPath) -> Result<(), PfaError> {
             match path {
                 PfaPath::Directory(dir) => {
                     let mut catalog_idx = vec![];
                     for _ in &dir.contents {
                         catalog_idx.push(state.writer.buf.position());
-                        state.writer.buf.write_all(&[0; 48])?; // pre allocate catalog
+                        state.writer.buf.write_all(&[0; ENTRY_SIZE])?; // pre allocate catalog
                     }
                     for (idx, path) in catalog_idx.iter().zip(dir.contents.iter()) {
                         match path {
                             PfaPath::Directory(dir) => {
                                 let idx = *idx;
                                 state.writer.buf.seek(SeekFrom::End(0))?;
-                                let end_pos = state.writer.buf.position();
+                                let end_pos = (state.writer.buf.position() - state.catalog_start)
+                                    / ENTRY_SIZE as u64;
                                 write_catalog_inner(state, path)?;
                                 state.writer.buf.set_position(idx);
                                 state.writer.write_catalog_entry(
@@ -194,6 +197,7 @@ impl PfaWriter {
         let mut state = CatalogState {
             writer: self,
             catalog_len,
+            catalog_start: catalog_start_idx,
         };
 
         write_catalog_inner(&mut state, &file)?;
@@ -217,7 +221,7 @@ impl PfaWriter {
         filename: &str,
         slice: &PfaCatalogSlice,
     ) -> Result<(), PfaError> {
-        self.write_nulled_fixed_size_string(filename, PfaPath::MAX_SIZE)?;
+        self.write_nulled_fixed_size_string(&format!("{}/", filename), PfaPath::MAX_SIZE)?;
         self.buf.write_u64::<LittleEndian>(slice.size)?;
         self.buf.write_u64::<LittleEndian>(slice.index)?;
         Ok(())

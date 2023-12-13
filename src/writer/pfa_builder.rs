@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use crate::writer::pfa_writer::*;
 
-use super::PfaError;
+use crate::PfaError;
 
 enum PfaBuilderPath {
     Directory(Vec<String>),
