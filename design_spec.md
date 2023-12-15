@@ -19,14 +19,14 @@ Entries which are directories contain a catalog_slice, while entires which are f
 path_name is null terminated.
 
 #### catalog_slice
-{entry_offset:u64}{size:u64}
+{size:u64}{offset:u64}
 
 entry_offset is the offset of the entry in the catalog from the current entry.
 
 size dictates how many catalog entries (starting at the idx) are inside of the directory
 
 #### data_slice
-{data_offset:u64}{size:u64}
+{size:u64}{offset:u64}
 
 data_offset is the number of bytes from the start of the raw data, and size is the number of bytes which should be read from that location.
 
