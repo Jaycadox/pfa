@@ -16,7 +16,7 @@ fn main() {
         .unwrap();
 
     let bytes = builder.build().unwrap();
-    let mut f = std::fs::File::create("out").unwrap();
+    let mut f = std::fs::File::create("out.pfa").unwrap();
     f.write_all(&bytes).unwrap();
     let mut reader = PfaReader::new(Cursor::new(bytes)).unwrap();
     reader.traverse_files("/", |file| {
