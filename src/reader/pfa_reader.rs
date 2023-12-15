@@ -306,17 +306,28 @@ impl<T: Read + Seek> PfaReader<T> {
         None
     }
 
-    pub fn traverse_files(&mut self, path: impl Into<PfaPath>, callback: fn(PfaFileContents)) {
-        let contents = self.get_path(path);
-        match contents {
-            Some(PfaPathContents::File(f)) => (callback)(f),
-            Some(PfaPathContents::Directory(d)) => {
-                for path in d.contents {
-                    self.traverse_files(path, callback);
+    pub fn traverse_files(
+        &mut self,
+        path: impl Into<PfaPath>,
+        mut callback: impl FnMut(PfaFileContents),
+    ) {
+        fn inner<T: Read + Seek>(
+            s: &mut PfaReader<T>,
+            path: PfaPath,
+            callback: &mut impl FnMut(PfaFileContents),
+        ) {
+            let contents = s.get_path(path);
+            match contents {
+                Some(PfaPathContents::File(f)) => (callback)(f),
+                Some(PfaPathContents::Directory(d)) => {
+                    for path in d.contents {
+                        inner(s, path, callback);
+                    }
                 }
+                _ => {}
             }
-            _ => {}
         }
+        inner(self, path.into(), &mut callback);
     }
 
     fn read_sized_buffer(buf: &mut T) -> Result<Vec<u8>, PfaError> {
