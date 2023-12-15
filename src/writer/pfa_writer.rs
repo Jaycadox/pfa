@@ -124,7 +124,6 @@ impl PfaWriter {
         struct CatalogState<'a> {
             writer: &'a mut PfaWriter,
             catalog_len: u64,
-            catalog_start: u64,
         }
 
         let mut file = PfaPath::File(PfaFile::new("".to_string(), vec![]).ok_or(
@@ -142,7 +141,6 @@ impl PfaWriter {
             self.write_catalog_entry(&name, &PfaCatalogSlice { index: 1, size })?;
             catalog_len += 1;
         }
-        let catalog_start_idx = self.buf.position();
         const ENTRY_SIZE: usize = 48;
         fn write_catalog_inner(state: &mut CatalogState, path: &PfaPath) -> Result<(), PfaError> {
             match path {
@@ -197,7 +195,6 @@ impl PfaWriter {
         let mut state = CatalogState {
             writer: self,
             catalog_len,
-            catalog_start: catalog_start_idx,
         };
 
         write_catalog_inner(&mut state, &file)?;
