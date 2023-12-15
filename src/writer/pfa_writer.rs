@@ -157,8 +157,8 @@ impl PfaWriter {
                             PfaPath::Directory(dir) => {
                                 let idx = *idx;
                                 state.writer.buf.seek(SeekFrom::End(0))?;
-                                let end_pos = (state.writer.buf.position() - state.catalog_start)
-                                    / ENTRY_SIZE as u64;
+                                let end_pos =
+                                    (state.writer.buf.position() - idx) / ENTRY_SIZE as u64;
                                 write_catalog_inner(state, path)?;
                                 state.writer.buf.set_position(idx);
                                 state.writer.write_catalog_entry(
