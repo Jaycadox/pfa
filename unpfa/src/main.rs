@@ -10,6 +10,11 @@ fn run() -> Result<()> {
     let view = args.next().map(|arg| arg == "--view").unwrap_or(false);
 
     let f = std::fs::File::open(&file_path).context(format!("failed to open file: {file_path}"))?;
+    let f_len = f
+        .metadata()
+        .context(format!("unable to retrieve metadata for file: {file_path}"))?
+        .len();
+
     let mut reader = PfaReader::new(f).context("failed to read PFA file")?;
     let root_dir_path = format!("./{}", reader.get_name());
     let root_dir = std::path::Path::new(&root_dir_path);
@@ -22,7 +27,9 @@ fn run() -> Result<()> {
     }
 
     let mut res: Result<()> = Ok(());
-    println!("{}", reader.get_name());
+    println!("{} ({}b)", reader.get_name(), f_len);
+
+    let mut file_size_sum = 0;
 
     reader.traverse_files("/", |file| {
         if res.is_err() {
@@ -31,6 +38,7 @@ fn run() -> Result<()> {
 
         res = (|| {
             let contents = file.get_contents();
+            file_size_sum += contents.len();
             let path = file.get_path();
             if !view {
                 let full_path = PathBuf::from(&format!("{}{}", root_dir_path, path));
@@ -58,6 +66,15 @@ fn run() -> Result<()> {
             Ok(())
         })();
     });
+
+    if res.is_ok() {
+        println!(
+            "Compression ratio: {} ({}b/{}b)",
+            file_size_sum as f32 / f_len as f32,
+            file_size_sum,
+            f_len
+        );
+    }
 
     res
 }
