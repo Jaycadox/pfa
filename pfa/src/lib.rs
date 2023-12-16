@@ -1,4 +1,5 @@
 pub mod reader;
+pub mod shared;
 pub mod writer;
 use std::string::FromUtf8Error;
 
