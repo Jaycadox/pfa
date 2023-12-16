@@ -6,7 +6,7 @@ use std::{
 
 use byteorder::{LittleEndian, ReadBytesExt};
 
-use crate::PfaError;
+use crate::{shared::data_flags::DataFlags, PfaError};
 
 #[derive(Debug)]
 struct PfaHeader {
@@ -16,22 +16,15 @@ struct PfaHeader {
 }
 
 #[derive(Debug)]
-pub(super) struct PfaSliceFlags(u8);
-impl PfaSliceFlags {
-    pub(super) const FLAG_USE_COMPRESSION: u8 = 0b00000001;
-    //pub(super) const FLAG_RESERVED: u8 = 0b11111110;
-}
-
-#[derive(Debug)]
 enum PfaSlice {
     Data {
-        flags: PfaSliceFlags,
+        flags: u8,
         offset: u64,
         size: u64,
     },
     Catalog {
         #[allow(dead_code)]
-        flags: PfaSliceFlags,
+        flags: u8,
         offset: u64,
         size: u64,
     },
@@ -264,9 +257,7 @@ impl<T: Read + Seek> PfaReader<T> {
                         let mut buf = vec![0; *size as usize];
                         self.data.read_exact(&mut buf).ok()?;
 
-                        if (flags.0 & PfaSliceFlags::FLAG_USE_COMPRESSION) != 0 {
-                            buf = lz4_flex::decompress_size_prepended(&buf).ok()?;
-                        }
+                        DataFlags::unprocess_contents_from_flags(*flags, &mut buf).ok()?;
 
                         return Some(PfaPathContents::File(PfaFileContents {
                             path,
@@ -416,7 +407,7 @@ impl<T: Read + Seek> PfaReader<T> {
         let offset = buf.read_u64::<LittleEndian>()?;
 
         Ok(PfaSlice::Catalog {
-            flags: PfaSliceFlags(flags),
+            flags,
             offset,
             size,
         })
@@ -428,7 +419,7 @@ impl<T: Read + Seek> PfaReader<T> {
         let offset = buf.read_u64::<LittleEndian>()?;
 
         Ok(PfaSlice::Data {
-            flags: PfaSliceFlags(flags),
+            flags,
             offset,
             size,
         })

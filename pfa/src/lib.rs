@@ -29,19 +29,31 @@ pub enum PfaError {
 mod tests {
     use std::io::{Cursor, Write};
 
-    use crate::{builder::PfaBuilder, reader::PfaReader};
+    use crate::{builder::PfaBuilder, reader::PfaReader, shared::DataFlags};
 
     #[test]
     fn test_1() {
         let mut builder = PfaBuilder::new("epic_name");
         builder
-            .add_file("dir_name/file.txt", vec![5; 1200], true)
+            .add_file(
+                "dir_name/file.txt",
+                vec![5; 1200],
+                DataFlags::forced_compression(),
+            )
             .unwrap();
         builder
-            .add_file("dir_name/file2.txt", vec![1, 2, 3, 4, 5, 7], false)
+            .add_file(
+                "dir_name/file2.txt",
+                vec![1, 2, 3, 4, 5, 7],
+                DataFlags::no_compression(),
+            )
             .unwrap();
         builder
-            .add_file("dir_name/dir/file3.txt", vec![1, 2, 3, 4, 5, 7], false)
+            .add_file(
+                "dir_name/dir/file3.txt",
+                vec![1, 2, 3, 4, 5, 7],
+                DataFlags::auto(),
+            )
             .unwrap();
 
         let bytes = builder.build().unwrap();

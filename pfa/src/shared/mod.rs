@@ -1,1 +1,2 @@
-pub mod slice_flags;
+pub mod data_flags;
+pub use data_flags::*;

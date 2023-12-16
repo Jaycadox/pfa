@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 
+use crate::shared::data_flags::DataFlags;
 use crate::writer::pfa_writer::*;
 
 use crate::PfaError;
@@ -71,7 +72,7 @@ impl PfaBuilder {
         &mut self,
         path: &PfaBuilderPath,
         data: Option<Vec<u8>>,
-        flags: u8,
+        flags: DataFlags,
     ) -> Result<(), PfaError> {
         let mut parts = VecDeque::from(
             match path {
@@ -131,7 +132,7 @@ impl PfaBuilder {
         }
         let path = path.into();
         if let PfaBuilderPath::Directory(_) = path {
-            self.create(&path, None, 0)?;
+            self.create(&path, None, DataFlags::default())?;
             return Ok(());
         }
 
@@ -144,14 +145,8 @@ impl PfaBuilder {
         &mut self,
         path: &str,
         content: Vec<u8>,
-        use_compression: bool,
+        flags: DataFlags,
     ) -> Result<(), PfaError> {
-        let mut flags: u8 = 0;
-        if use_compression {
-            flags |= PfaSliceFlags::FLAG_USE_COMPRESSION;
-        }
-        flags |= PfaSliceFlags::FLAG_RESERVED;
-
         let path = path.to_string();
         let path = path.into();
         if let PfaBuilderPath::File { .. } = path {

@@ -2,17 +2,17 @@ use std::io::{Cursor, Seek, SeekFrom, Write};
 
 use byteorder::{LittleEndian, WriteBytesExt};
 
-use crate::PfaError;
+use crate::{shared::data_flags::DataFlags, PfaError};
 
 #[derive(Debug)]
 pub struct PfaFile {
     pub(super) name: String,
-    pub(super) flags: u8,
+    pub(super) flags: DataFlags,
     pub(super) contents: Vec<u8>,
 }
 
 impl PfaFile {
-    pub fn new(name: String, contents: Vec<u8>, flags: u8) -> Option<Self> {
+    pub fn new(name: String, contents: Vec<u8>, flags: DataFlags) -> Option<Self> {
         Some(Self {
             name,
             contents,
@@ -36,13 +36,6 @@ impl PfaDirectory {
     }
 }
 
-#[derive(Clone, Debug)]
-pub(super) struct PfaSliceFlags(u8);
-impl PfaSliceFlags {
-    pub(super) const FLAG_USE_COMPRESSION: u8 = 0b00000001;
-    pub(super) const FLAG_RESERVED: u8 = 0b11111110;
-}
-
 #[derive(Debug)]
 pub enum PfaPath {
     File(PfaFile),
@@ -55,14 +48,14 @@ impl PfaPath {
 
 #[derive(Clone, Debug)]
 struct PfaDataSlice {
-    flags: PfaSliceFlags,
+    flags: u8,
     offset: u64,
     size: u64,
 }
 
 #[derive(Clone, Debug)]
 struct PfaCatalogSlice {
-    flags: PfaSliceFlags,
+    flags: u8,
     index: u64,
     size: u64,
 }
@@ -140,9 +133,11 @@ impl PfaWriter {
             catalog_len: u64,
         }
 
-        let mut file = PfaPath::File(PfaFile::new("".to_string(), vec![], 0).ok_or(
-            PfaError::CustomError("unable to make empty file for swap".to_string()),
-        )?);
+        let mut file = PfaPath::File(
+            PfaFile::new("".to_string(), vec![], DataFlags::default()).ok_or(
+                PfaError::CustomError("unable to make empty file for swap".to_string()),
+            )?,
+        );
         std::mem::swap(&mut file, &mut self.files);
 
         let catalog_len_idx = self.buf.position();
@@ -157,7 +152,7 @@ impl PfaWriter {
                 &PfaCatalogSlice {
                     index: 1,
                     size,
-                    flags: PfaSliceFlags(0),
+                    flags: 0,
                 },
             )?;
             catalog_len += 1;
@@ -185,7 +180,7 @@ impl PfaWriter {
                                     &PfaCatalogSlice {
                                         index: end_pos,
                                         size: dir.contents.len() as u64,
-                                        flags: PfaSliceFlags(0),
+                                        flags: 0,
                                     },
                                 )?;
                                 state.catalog_len += 1;
@@ -201,11 +196,10 @@ impl PfaWriter {
                 PfaPath::File(file) => {
                     let data_idx = state.writer.data.len();
 
-                    let buf = if (file.flags & PfaSliceFlags::FLAG_USE_COMPRESSION) != 0 {
-                        lz4_flex::compress_prepend_size(&file.contents)
-                    } else {
-                        file.contents.clone()
-                    };
+                    let (buf, flags) = file
+                        .flags
+                        .clone()
+                        .process_content_and_generate_flags(&file.contents);
 
                     state.writer.data.append(&mut buf.clone());
                     state.writer.write_data_entry(
@@ -213,7 +207,7 @@ impl PfaWriter {
                         &PfaDataSlice {
                             offset: data_idx as u64,
                             size: buf.len() as u64,
-                            flags: PfaSliceFlags(file.flags),
+                            flags,
                         },
                     )?;
                     state.catalog_len += 1;
@@ -238,7 +232,7 @@ impl PfaWriter {
 
     fn write_data_entry(&mut self, filename: &str, slice: &PfaDataSlice) -> Result<(), PfaError> {
         self.write_nulled_fixed_size_string(filename, PfaPath::MAX_SIZE)?;
-        self.buf.write_u8(slice.flags.0)?;
+        self.buf.write_u8(slice.flags)?;
         self.buf.write_u64::<LittleEndian>(slice.size)?;
         self.buf.write_u64::<LittleEndian>(slice.offset)?;
         Ok(())
@@ -250,7 +244,7 @@ impl PfaWriter {
         slice: &PfaCatalogSlice,
     ) -> Result<(), PfaError> {
         self.write_nulled_fixed_size_string(&format!("{}/", filename), PfaPath::MAX_SIZE)?;
-        self.buf.write_u8(slice.flags.0)?;
+        self.buf.write_u8(slice.flags)?;
         self.buf.write_u64::<LittleEndian>(slice.size)?;
         self.buf.write_u64::<LittleEndian>(slice.index)?;
         Ok(())
