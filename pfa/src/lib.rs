@@ -3,6 +3,7 @@ pub mod shared;
 pub mod writer;
 use std::string::FromUtf8Error;
 
+use lz4_flex::block::DecompressError;
 use thiserror::Error;
 pub use writer::builder;
 
@@ -16,6 +17,9 @@ pub enum PfaError {
 
     #[error("invalid utf8 string: {0}")]
     StringDecodeError(#[from] FromUtf8Error),
+
+    #[error("Failed to decompress: {0}")]
+    FailedDecompressionError(#[from] DecompressError),
 
     #[error("Unknown PFA error")]
     Unknown,

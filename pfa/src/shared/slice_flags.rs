@@ -1,8 +1,12 @@
+use crate::PfaError;
+
+#[derive(Debug)]
 pub enum SliceCompressionType {
     Automatic,
     Forced(bool),
 }
 
+#[derive(Debug)]
 pub struct SliceFlags {
     compression: SliceCompressionType,
 }
@@ -19,8 +23,8 @@ impl SliceFlags {
         self
     }
 
-    pub fn serialize_flags_and_data(mut self, file_data: &[u8]) -> (Vec<u8>, u8) {
-        let mut contents = file_data.to_vec(); // TODO: maybe use Cow
+    pub fn process_content_and_generate_flags(mut self, file_data: &[u8]) -> (Vec<u8>, u8) {
+        let mut contents = file_data.to_vec(); // TODO: maybe use Cow, or take contents via mut ref
 
         let mut already_compressed = false;
         if let SliceCompressionType::Automatic = self.compression {
@@ -50,6 +54,17 @@ impl SliceFlags {
 
         (contents, bits)
     }
+
+    pub fn unprocess_contents_from_flags(
+        bitfield: u8,
+        contents: &mut Vec<u8>,
+    ) -> Result<(), PfaError> {
+        if (bitfield & SliceFlags::COMPRESSION) != 0 {
+            *contents = lz4_flex::decompress_size_prepended(contents)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -60,20 +75,28 @@ mod tests {
     fn no_compression_test() {
         let data = vec![5; 2000];
         let flags = SliceFlags::new(SliceCompressionType::Forced(false));
-        let (new_data, bitfield) = flags.serialize_flags_and_data(&data);
+        let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
         assert_eq!(data.len(), new_data.len());
         assert_eq!(bitfield, 0b11111110);
+
+        let original_data = data;
+        SliceFlags::unprocess_contents_from_flags(bitfield, &mut new_data).unwrap();
+        assert_eq!(original_data, new_data);
     }
 
     #[test]
     fn forced_compression_test() {
         let data = vec![5; 2000];
         let flags = SliceFlags::new(SliceCompressionType::Forced(true));
-        let (new_data, bitfield) = flags.serialize_flags_and_data(&data);
+        let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
         assert_ne!(data.len(), new_data.len());
         assert_eq!(bitfield, 0b11111111);
+
+        let original_data = data;
+        SliceFlags::unprocess_contents_from_flags(bitfield, &mut new_data).unwrap();
+        assert_eq!(original_data, new_data);
     }
 
     #[test]
@@ -81,12 +104,16 @@ mod tests {
         for size in 0..5000 {
             let data = vec![5; size];
             let flags = SliceFlags::new(SliceCompressionType::Automatic);
-            let (new_data, _) = flags.serialize_flags_and_data(&data);
+            let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
             assert!(
                 data.len() >= new_data.len(),
                 "automatic compression produced a larger content size"
             );
+
+            let original_data = data;
+            SliceFlags::unprocess_contents_from_flags(bitfield, &mut new_data).unwrap();
+            assert_eq!(original_data, new_data);
         }
     }
 }
