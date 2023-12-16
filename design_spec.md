@@ -19,16 +19,23 @@ Entries which are directories contain a catalog_slice, while entires which are f
 path_name is null terminated.
 
 #### catalog_slice
-{size:u64}{offset:u64}
+{slice_flags}{size:u64}{offset:u64}
 
 entry_offset is the offset of the entry in the catalog from the current entry.
 
 size dictates how many catalog entries (starting at the idx) are inside of the directory
 
 #### data_slice
-{size:u64}{offset:u64}
+{slice_flags}{size:u64}{offset:u64}
 
 data_offset is the number of bytes from the start of the raw data, and size is the number of bytes which should be read from that location.
+
+#### slice_flags
+{use_compression:u1}{reserved:u8}
+
+Bitfield with a size of 1 byte
+
+Note: use_compression is only supported for data slices, not catalog slices. The format for compression is LZ4 with a little endian u32 size prepended.
 
 ### data
 {data_size:u64}{data:u8\[data_size\]}

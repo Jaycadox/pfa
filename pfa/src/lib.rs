@@ -30,13 +30,13 @@ mod tests {
     fn test_1() {
         let mut builder = PfaBuilder::new("epic_name");
         builder
-            .add_file("dir_name/file.txt", vec![1, 2, 3, 4, 5, 6])
+            .add_file("dir_name/file.txt", vec![5; 1200], true)
             .unwrap();
         builder
-            .add_file("dir_name/file2.txt", vec![1, 2, 3, 4, 5, 7])
+            .add_file("dir_name/file2.txt", vec![1, 2, 3, 4, 5, 7], false)
             .unwrap();
         builder
-            .add_file("dir_name/dir/file3.txt", vec![1, 2, 3, 4, 5, 7])
+            .add_file("dir_name/dir/file3.txt", vec![1, 2, 3, 4, 5, 7], false)
             .unwrap();
 
         let bytes = builder.build().unwrap();
@@ -65,7 +65,7 @@ mod tests {
         let f = files.pop().unwrap();
         assert_eq!(&f.get_name(), "file.txt");
         assert_eq!(&f.get_path().to_string(), "/dir_name/file.txt");
-        assert_eq!(f.get_contents(), &[1, 2, 3, 4, 5, 6]);
+        assert_eq!(f.get_contents(), &[5; 1200]);
 
         assert!(files.is_empty());
     }

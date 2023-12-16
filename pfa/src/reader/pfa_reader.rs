@@ -16,9 +16,25 @@ struct PfaHeader {
 }
 
 #[derive(Debug)]
+pub(super) struct PfaSliceFlags(u8);
+impl PfaSliceFlags {
+    pub(super) const FLAG_USE_COMPRESSION: u8 = 0b00000001;
+    //pub(super) const FLAG_RESERVED: u8 = 0b11111110;
+}
+
+#[derive(Debug)]
 enum PfaSlice {
-    Data { offset: u64, size: u64 },
-    Catalog { offset: u64, size: u64 },
+    Data {
+        flags: PfaSliceFlags,
+        offset: u64,
+        size: u64,
+    },
+    Catalog {
+        #[allow(dead_code)]
+        flags: PfaSliceFlags,
+        offset: u64,
+        size: u64,
+    },
 }
 
 #[derive(Debug)]
@@ -234,18 +250,30 @@ impl<T: Read + Seek> PfaReader<T> {
 
             if entry.path == part {
                 match (&entry.slice, needs_data_slice) {
-                    (PfaSlice::Data { offset, size }, true) => {
+                    (
+                        PfaSlice::Data {
+                            offset,
+                            size,
+                            flags,
+                        },
+                        true,
+                    ) => {
                         self.data
                             .seek(std::io::SeekFrom::Start(self.data_idx as u64 + offset))
                             .ok()?;
                         let mut buf = vec![0; *size as usize];
                         self.data.read_exact(&mut buf).ok()?;
+
+                        if (flags.0 & PfaSliceFlags::FLAG_USE_COMPRESSION) != 0 {
+                            buf = lz4_flex::decompress_size_prepended(&buf).ok()?;
+                        }
+
                         return Some(PfaPathContents::File(PfaFileContents {
                             path,
                             contents: buf,
                         }));
                     }
-                    (PfaSlice::Catalog { offset, size }, false) => {
+                    (PfaSlice::Catalog { offset, size, .. }, false) => {
                         if is_last {
                             let index = index + *offset as usize;
                             let catalog_contents =
@@ -383,17 +411,27 @@ impl<T: Read + Seek> PfaReader<T> {
         Ok(PfaEntry { path, slice })
     }
     fn read_catalog_slice(buf: &mut T) -> Result<PfaSlice, PfaError> {
+        let flags = buf.read_u8()?;
         let size = buf.read_u64::<LittleEndian>()?;
         let offset = buf.read_u64::<LittleEndian>()?;
 
-        Ok(PfaSlice::Catalog { offset, size })
+        Ok(PfaSlice::Catalog {
+            flags: PfaSliceFlags(flags),
+            offset,
+            size,
+        })
     }
 
     fn read_data_slice(buf: &mut T) -> Result<PfaSlice, PfaError> {
+        let flags = buf.read_u8()?;
         let size = buf.read_u64::<LittleEndian>()?;
         let offset = buf.read_u64::<LittleEndian>()?;
 
-        Ok(PfaSlice::Data { offset, size })
+        Ok(PfaSlice::Data {
+            flags: PfaSliceFlags(flags),
+            offset,
+            size,
+        })
     }
 
     fn read_header(buf: &mut T) -> Result<PfaHeader, PfaError> {

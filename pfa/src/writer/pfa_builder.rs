@@ -67,7 +67,12 @@ impl PfaBuilder {
         }
     }
 
-    fn create(&mut self, path: &PfaBuilderPath, data: Option<Vec<u8>>) -> Result<(), PfaError> {
+    fn create(
+        &mut self,
+        path: &PfaBuilderPath,
+        data: Option<Vec<u8>>,
+        flags: u8,
+    ) -> Result<(), PfaError> {
         let mut parts = VecDeque::from(
             match path {
                 PfaBuilderPath::File { parts, .. } => parts,
@@ -106,7 +111,7 @@ impl PfaBuilder {
 
             if let PfaPath::Directory(dir) = working_path {
                 dir.contents.push(PfaPath::File(
-                    PfaFile::new(name.to_owned(), data)
+                    PfaFile::new(name.to_owned(), data, flags)
                         .ok_or(PfaError::CustomError("file name too large".into()))?,
                 ));
             } else {
@@ -126,7 +131,7 @@ impl PfaBuilder {
         }
         let path = path.into();
         if let PfaBuilderPath::Directory(_) = path {
-            self.create(&path, None)?;
+            self.create(&path, None, 0)?;
             return Ok(());
         }
 
@@ -135,11 +140,22 @@ impl PfaBuilder {
         ))
     }
 
-    pub fn add_file(&mut self, path: &str, content: Vec<u8>) -> Result<(), PfaError> {
+    pub fn add_file(
+        &mut self,
+        path: &str,
+        content: Vec<u8>,
+        use_compression: bool,
+    ) -> Result<(), PfaError> {
+        let mut flags: u8 = 0;
+        if use_compression {
+            flags |= PfaSliceFlags::FLAG_USE_COMPRESSION;
+        }
+        flags |= PfaSliceFlags::FLAG_RESERVED;
+
         let path = path.to_string();
         let path = path.into();
         if let PfaBuilderPath::File { .. } = path {
-            self.create(&path, Some(content))?;
+            self.create(&path, Some(content), flags)?;
             return Ok(());
         }
 

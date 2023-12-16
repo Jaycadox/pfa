@@ -7,4 +7,5 @@ edition = "2021"
 
 [dependencies]
 byteorder = "1.5.0"
+lz4_flex = "0.11.1"
 thiserror = "1.0.50"
