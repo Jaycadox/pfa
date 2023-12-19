@@ -1,9 +1,6 @@
 use std::io::{Cursor, Read, Write};
 
-use aes_gcm::{
-    aead::{Aead, Buffer},
-    AeadCore, KeyInit,
-};
+use aes_gcm::{aead::Aead, AeadCore, KeyInit};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::{RngCore, SeedableRng};
 
@@ -193,7 +190,7 @@ impl DataFlags {
                 let decoder = reed_solomon::Decoder::new(ecc_size as usize);
                 let mut chunk_data = vec![0; chunk_size];
                 c.read_exact(&mut chunk_data).unwrap();
-                let dec_chunk_data = decoder.correct(&mut chunk_data, None).unwrap();
+                let dec_chunk_data = decoder.correct(&chunk_data, None).unwrap();
                 buf.extend_from_slice(dec_chunk_data.data());
             }
             *contents = buf;
