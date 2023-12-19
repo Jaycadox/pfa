@@ -164,6 +164,7 @@ dependencies = [
  "lz4_flex",
  "rand",
  "rand_chacha",
+ "reed-solomon",
  "thiserror",
 ]
 
@@ -232,6 +233,12 @@ checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
 dependencies = [
  "getrandom",
 ]
+
+[[package]]
+name = "reed-solomon"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13de68c877a77f35885442ac72c8beb7c2f0b09380c43b734b9d63d1db69ee54"
 
 [[package]]
 name = "static_assertions"

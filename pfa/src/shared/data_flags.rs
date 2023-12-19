@@ -1,6 +1,9 @@
 use std::io::{Cursor, Read, Write};
 
-use aes_gcm::{aead::Aead, AeadCore, KeyInit};
+use aes_gcm::{
+    aead::{Aead, Buffer},
+    AeadCore, KeyInit,
+};
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use rand::{RngCore, SeedableRng};
 
@@ -16,16 +19,23 @@ pub enum DataCompressionType {
 pub struct DataFlags {
     compression: DataCompressionType,
     encryption_key: Option<[u8; 32]>,
+    error_correction: Option<f32>,
 }
 
 impl DataFlags {
     const COMPRESSION: u8 = 0b00000001;
     const ENCRYPTION: u8 = 0b00000010;
-    const RESERVED: u8 = 0b11111100;
-    pub fn new(encryption_key: Option<[u8; 32]>, compression: DataCompressionType) -> Self {
+    const ERROR_CORRECTION: u8 = 0b00000100;
+    const RESERVED: u8 = 0b11111000;
+    pub fn new(
+        error_correction: Option<f32>,
+        encryption_key: Option<[u8; 32]>,
+        compression: DataCompressionType,
+    ) -> Self {
         Self {
             encryption_key,
             compression,
+            error_correction,
         }
     }
 
@@ -55,12 +65,19 @@ impl DataFlags {
         self
     }
 
+    pub fn error_correction(mut self, error_correction_percentage: Option<f32>) -> Self {
+        self.error_correction = error_correction_percentage;
+        self
+    }
+
     pub fn encryption(mut self, key: Option<[u8; 32]>) -> Self {
         self.encryption_key = key;
         self
     }
 
-    pub fn process_content_and_generate_flags(mut self, file_data: &[u8]) -> (Vec<u8>, u8) {
+    const MAX_CHUNK_SIZE: usize = 255;
+
+    pub(crate) fn process_content_and_generate_flags(mut self, file_data: &[u8]) -> (Vec<u8>, u8) {
         let mut contents = file_data.to_vec(); // TODO: maybe use Cow, or take contents via mut ref
 
         let mut already_compressed = false;
@@ -97,18 +114,48 @@ impl DataFlags {
             let nonce =
                 aes_gcm::Aes256Gcm::generate_nonce(&mut rand_chacha::ChaChaRng::from_seed(seed));
 
-            contents = cipher
+            let mut encrypted = cipher
                 .encrypt(&nonce, &contents[..])
                 .expect("failed to encrypt");
 
-            let header = vec![];
-            let mut c = Cursor::new(header);
-            c.write_u64::<LittleEndian>(nonce.len() as u64).unwrap();
-            c.write_all(nonce.as_slice()).unwrap();
-            let mut header = c.into_inner();
-            header.append(&mut contents);
+            let mut header = vec![];
+            header
+                .write_u64::<LittleEndian>(nonce.len() as u64)
+                .unwrap();
+            header.write_all(nonce.as_slice()).unwrap();
+            header.append(&mut encrypted);
 
             contents = header;
+        }
+
+        if let Some(percentage) = self.error_correction {
+            let ecc_size = (percentage * Self::MAX_CHUNK_SIZE as f32) as usize;
+            let block_size = Self::MAX_CHUNK_SIZE - ecc_size;
+
+            // The first block has hard coded values and stores the ecc size of the following
+            // blocks
+
+            let mut header = vec![];
+            {
+                let mut first_buf = vec![];
+                first_buf
+                    .write_u64::<LittleEndian>(ecc_size as u64)
+                    .unwrap();
+                let first_enc = reed_solomon::Encoder::new(4);
+                let first_ecc = first_enc.encode(&first_buf);
+                header.extend_from_slice(&first_ecc[..]);
+            }
+
+            let enc = reed_solomon::Encoder::new(ecc_size);
+
+            for chunk in contents.chunks(block_size) {
+                let encoded = enc.encode(chunk);
+                header.extend_from_slice(&encoded);
+            }
+
+            contents = header;
+
+            bits |= DataFlags::ERROR_CORRECTION;
         }
 
         bits |= DataFlags::RESERVED;
@@ -116,11 +163,42 @@ impl DataFlags {
         (contents, bits)
     }
 
-    pub fn unprocess_contents_from_flags(
+    pub(crate) fn unprocess_contents_from_flags(
         bitfield: u8,
         mut contents: &mut Vec<u8>,
         key: Option<[u8; 32]>,
     ) -> Result<(), PfaError> {
+        if (bitfield & DataFlags::ERROR_CORRECTION) != 0 {
+            let mut c = Cursor::new(&contents);
+
+            let all_chunks_len = contents.len() - 12; // first chunk header size
+            let num_chunks = all_chunks_len / Self::MAX_CHUNK_SIZE;
+            let mut chunk_sizes = vec![Self::MAX_CHUNK_SIZE; num_chunks];
+            if all_chunks_len % Self::MAX_CHUNK_SIZE != 0 {
+                chunk_sizes.push(all_chunks_len % Self::MAX_CHUNK_SIZE);
+            }
+
+            let ecc_size = {
+                // Read first header
+                let mut first_header = vec![0; 12];
+                c.read_exact(&mut first_header).unwrap();
+                let dec = reed_solomon::Decoder::new(4);
+
+                let dec_first_header = dec.correct(&first_header, None).unwrap();
+                dec_first_header.data().read_u64::<LittleEndian>().unwrap()
+            };
+
+            let mut buf = vec![];
+            for chunk_size in chunk_sizes {
+                let decoder = reed_solomon::Decoder::new(ecc_size as usize);
+                let mut chunk_data = vec![0; chunk_size];
+                c.read_exact(&mut chunk_data).unwrap();
+                let dec_chunk_data = decoder.correct(&mut chunk_data, None).unwrap();
+                buf.extend_from_slice(dec_chunk_data.data());
+            }
+            *contents = buf;
+        }
+
         if let Some(key) = key {
             if (bitfield & DataFlags::ENCRYPTION) == 0 {
                 return Err(PfaError::DecryptUnencryptedFileError);
@@ -167,6 +245,7 @@ impl Default for DataFlags {
         Self {
             compression: DataCompressionType::Forced(false),
             encryption_key: None,
+            error_correction: None,
         }
     }
 }
@@ -178,11 +257,11 @@ mod tests {
     #[test]
     fn no_compression_test() {
         let data = vec![5; 2000];
-        let flags = DataFlags::new(None, DataCompressionType::Forced(false));
+        let flags = DataFlags::new(None, None, DataCompressionType::Forced(false));
         let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
         assert_eq!(data.len(), new_data.len());
-        assert_eq!(bitfield, 0b11111100);
+        assert_eq!(bitfield, 0b11111000);
 
         let original_data = data;
         DataFlags::unprocess_contents_from_flags(bitfield, &mut new_data, None).unwrap();
@@ -192,11 +271,11 @@ mod tests {
     #[test]
     fn forced_compression_test() {
         let data = vec![5; 2000];
-        let flags = DataFlags::new(None, DataCompressionType::Forced(true));
+        let flags = DataFlags::new(None, None, DataCompressionType::Forced(true));
         let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
         assert_ne!(data.len(), new_data.len());
-        assert_eq!(bitfield, 0b11111101);
+        assert_eq!(bitfield, 0b11111001);
 
         let original_data = data;
         DataFlags::unprocess_contents_from_flags(bitfield, &mut new_data, None).unwrap();
@@ -207,7 +286,7 @@ mod tests {
     fn auto_compression_test() {
         for size in 0..5000 {
             let data = vec![5; size];
-            let flags = DataFlags::new(None, DataCompressionType::Automatic);
+            let flags = DataFlags::new(None, None, DataCompressionType::Automatic);
             let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
             assert!(
@@ -225,7 +304,7 @@ mod tests {
     fn encryption_test() {
         let data = vec![5; 2000];
         let key = DataFlags::generate_key();
-        let flags = DataFlags::new(Some(key), DataCompressionType::Forced(false));
+        let flags = DataFlags::new(None, Some(key), DataCompressionType::Forced(false));
         let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
 
         let original_data = data;
@@ -237,8 +316,47 @@ mod tests {
     fn encryption_with_compression_test() {
         let data = vec![5; 2000];
         let key = DataFlags::generate_key();
-        let flags = DataFlags::new(Some(key), DataCompressionType::Forced(true));
+        let flags = DataFlags::new(None, Some(key), DataCompressionType::Forced(true));
         let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
+
+        let original_data = data;
+        DataFlags::unprocess_contents_from_flags(bitfield, &mut new_data, Some(key)).unwrap();
+        assert_eq!(original_data, new_data);
+    }
+
+    #[test]
+    fn error_correction_test() {
+        let data = vec![5; 2000];
+        let flags = DataFlags::auto().error_correction(Some(0.5));
+        let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
+
+        for (i, val) in new_data.iter_mut().enumerate() {
+            if i % 3 == 0 {
+                // remove 20% of the data
+                *val = 0;
+            }
+        }
+
+        let original_data = data;
+        DataFlags::unprocess_contents_from_flags(bitfield, &mut new_data, None).unwrap();
+        assert_eq!(original_data, new_data);
+    }
+
+    #[test]
+    fn error_correction_encryption_test() {
+        let data = vec![5; 2000];
+        let key = DataFlags::generate_key();
+        let flags = DataFlags::auto()
+            .error_correction(Some(0.5))
+            .encryption(Some(key));
+        let (mut new_data, bitfield) = flags.process_content_and_generate_flags(&data);
+
+        for (i, val) in new_data.iter_mut().enumerate() {
+            if i % 3 == 0 {
+                // remove 20% of the data
+                *val = 0;
+            }
+        }
 
         let original_data = data;
         DataFlags::unprocess_contents_from_flags(bitfield, &mut new_data, Some(key)).unwrap();

@@ -27,6 +27,9 @@ pub enum PfaError {
     #[error("Malformed path")]
     MalformedPathError,
 
+    #[error("Failed to apply error correction: {0}")]
+    ErrorCorrectionError(String),
+
     #[error("invalid utf8 string: {0}")]
     StringDecodeError(#[from] FromUtf8Error),
 
@@ -50,14 +53,14 @@ mod tests {
             .add_file(
                 "dir_name/file.txt",
                 vec![5; 1200],
-                DataFlags::forced_compression(),
+                DataFlags::forced_compression().error_correction(Some(0.3)),
             )
             .unwrap();
         builder
             .add_file(
                 "dir_name/file2.txt",
                 vec![1, 2, 3, 4, 5, 7],
-                DataFlags::no_compression(),
+                DataFlags::no_compression().error_correction(Some(0.1)),
             )
             .unwrap();
         builder
@@ -73,7 +76,7 @@ mod tests {
         builder
             .add_file(
                 "dir_name/dir/encrypted_file.txt",
-                vec![1, 2, 3, 4, 5, 8],
+                vec![5; 80],
                 DataFlags::auto().encryption(Some(encrypted_key)),
             )
             .unwrap();
@@ -116,6 +119,6 @@ mod tests {
             &f.get_path().to_string(),
             "/dir_name/dir/encrypted_file.txt"
         );
-        assert_eq!(f.get_contents(), [1, 2, 3, 4, 5, 8]);
+        assert_eq!(f.get_contents(), [5; 80]);
     }
 }
