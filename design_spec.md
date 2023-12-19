@@ -31,11 +31,12 @@ size dictates how many catalog entries (starting at the idx) are inside of the d
 data_offset is the number of bytes from the start of the raw data, and size is the number of bytes which should be read from that location.
 
 #### slice_flags
-{use_compression:u1}{reserved:u8}
+{use_compression:u1}{password_encrypted:u1}{reserved:u6}
 
 Bitfield with a size of 1 byte
 
 Note: use_compression is only supported for data slices, not catalog slices. The format for compression is LZ4 with a little endian u32 size prepended.
+Note: password_encrypted is only supported for data slices, it uses an AES-GCM cipher.
 
 ### data
 {data_size:u64}{data:u8\[data_size\]}

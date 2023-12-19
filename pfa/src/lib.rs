@@ -12,6 +12,15 @@ pub enum PfaError {
     #[error("Generic PFA error: {0}")]
     CustomError(String),
 
+    #[error("Tried to decrypt unencrypted file")]
+    DecryptUnencryptedFileError,
+
+    #[error("Failed to decrypt file")]
+    FileDecryptError,
+
+    #[error("Key to encrypted file was not provided")]
+    EncryptedFileKeyNotProvided,
+
     #[error("PFA IO error: {0}")]
     IOError(#[from] std::io::Error),
 
@@ -56,6 +65,16 @@ mod tests {
             )
             .unwrap();
 
+        let encrypted_key = DataFlags::generate_key();
+
+        builder
+            .add_file(
+                "dir_name/dir/encrypted_file.txt",
+                vec![1, 2, 3, 4, 5, 8],
+                DataFlags::auto().encryption(Some(encrypted_key)),
+            )
+            .unwrap();
+
         let bytes = builder.build().unwrap();
         let mut f = std::fs::File::create("out.pfa").unwrap();
         f.write_all(&bytes).unwrap();
@@ -85,5 +104,14 @@ mod tests {
         assert_eq!(f.get_contents(), &[5; 1200]);
 
         assert!(files.is_empty());
+        let f = reader
+            .get_file("/dir_name/dir/encrypted_file.txt", Some(encrypted_key))
+            .unwrap();
+        assert_eq!(&f.get_name(), "encrypted_file.txt");
+        assert_eq!(
+            &f.get_path().to_string(),
+            "/dir_name/dir/encrypted_file.txt"
+        );
+        assert_eq!(f.get_contents(), [1, 2, 3, 4, 5, 8]);
     }
 }

@@ -214,7 +214,11 @@ impl<T: Read + Seek> PfaReader<T> {
         &self.header.extra_data
     }
 
-    pub fn get_path(&mut self, path: impl Into<PfaPath>) -> Option<PfaPathContents> {
+    pub fn get_path(
+        &mut self,
+        path: impl Into<PfaPath>,
+        key: Option<[u8; 32]>,
+    ) -> Option<PfaPathContents> {
         let path: PfaPath = path.into();
         let is_directory = path.is_directory();
 
@@ -257,7 +261,7 @@ impl<T: Read + Seek> PfaReader<T> {
                         let mut buf = vec![0; *size as usize];
                         self.data.read_exact(&mut buf).ok()?;
 
-                        DataFlags::unprocess_contents_from_flags(*flags, &mut buf).ok()?;
+                        DataFlags::unprocess_contents_from_flags(*flags, &mut buf, key).ok()?;
 
                         return Some(PfaPathContents::File(PfaFileContents {
                             path,
@@ -304,27 +308,36 @@ impl<T: Read + Seek> PfaReader<T> {
         }
     }
 
-    pub fn get_file(&mut self, path: impl Into<PfaPath>) -> Option<PfaFileContents> {
-        if let Some(PfaPathContents::File(f)) = self.get_path(path) {
+    pub fn get_file(
+        &mut self,
+        path: impl Into<PfaPath>,
+        key: Option<[u8; 32]>,
+    ) -> Option<PfaFileContents> {
+        if let Some(PfaPathContents::File(f)) = self.get_path(path, key) {
             return Some(f);
         }
 
         None
     }
 
-    pub fn get_directory(&mut self, path: impl Into<PfaPath>) -> Option<PfaDirectoryContents> {
+    pub fn get_directory(
+        &mut self,
+        path: impl Into<PfaPath>,
+        key: Option<[u8; 32]>,
+    ) -> Option<PfaDirectoryContents> {
         let mut path: PfaPath = path.into();
         if !path.is_directory() {
             path = path.append("")?; // append empty part to make it a directory
         }
 
-        if let Some(PfaPathContents::Directory(d)) = self.get_path(path) {
+        if let Some(PfaPathContents::Directory(d)) = self.get_path(path, key) {
             return Some(d);
         }
 
         None
     }
 
+    /// Warning: this function will only successfully traverse non-encrypted files
     pub fn traverse_files(
         &mut self,
         path: impl Into<PfaPath>,
@@ -335,7 +348,7 @@ impl<T: Read + Seek> PfaReader<T> {
             path: PfaPath,
             callback: &mut impl FnMut(PfaFileContents),
         ) {
-            let contents = s.get_path(path);
+            let contents = s.get_path(path, None);
             match contents {
                 Some(PfaPathContents::File(f)) => (callback)(f),
                 Some(PfaPathContents::Directory(d)) => {
