@@ -218,7 +218,7 @@ impl<T: Read + Seek> PfaReader<T> {
         &mut self,
         path: impl Into<PfaPath>,
         key: Option<[u8; 32]>,
-    ) -> Option<PfaPathContents> {
+    ) -> Result<Option<PfaPathContents>, PfaError> {
         let path: PfaPath = path.into();
         let is_directory = path.is_directory();
 
@@ -229,14 +229,14 @@ impl<T: Read + Seek> PfaReader<T> {
         }
 
         if parts.is_empty() {
-            return None;
+            return Err(PfaError::MalformedPathError);
         }
         let mut index = 0;
         let mut remaining_size = None;
-        let mut part = parts.pop_front()?;
+        let mut part = parts.pop_front().ok_or(PfaError::MalformedPathError)?;
         loop {
             if index == self.catalog.entries.len() {
-                return None;
+                return Ok(None);
             }
 
             let is_last = parts.is_empty();
@@ -256,17 +256,16 @@ impl<T: Read + Seek> PfaReader<T> {
                         true,
                     ) => {
                         self.data
-                            .seek(std::io::SeekFrom::Start(self.data_idx as u64 + offset))
-                            .ok()?;
+                            .seek(std::io::SeekFrom::Start(self.data_idx as u64 + offset))?;
                         let mut buf = vec![0; *size as usize];
-                        self.data.read_exact(&mut buf).ok()?;
+                        self.data.read_exact(&mut buf)?;
 
-                        DataFlags::unprocess_contents_from_flags(*flags, &mut buf, key).ok()?;
+                        DataFlags::unprocess_contents_from_flags(*flags, &mut buf, key)?;
 
-                        return Some(PfaPathContents::File(PfaFileContents {
+                        return Ok(Some(PfaPathContents::File(PfaFileContents {
                             path,
                             contents: buf,
-                        }));
+                        })));
                     }
                     (PfaSlice::Catalog { offset, size, .. }, false) => {
                         if is_last {
@@ -284,17 +283,18 @@ impl<T: Read + Seek> PfaReader<T> {
                                         path.append(PfaPath::from(&(format!("{}/", x.path))[..]))
                                     }
                                 })
-                                .collect::<Option<Vec<_>>>()?;
+                                .collect::<Option<Vec<_>>>()
+                                .ok_or(PfaError::MalformedPathError)?;
 
-                            return Some(PfaPathContents::Directory(PfaDirectoryContents {
+                            return Ok(Some(PfaPathContents::Directory(PfaDirectoryContents {
                                 path,
                                 contents,
-                            }));
+                            })));
                         }
 
                         index += *offset as usize;
                         remaining_size = Some(*size);
-                        part = parts.pop_front()?;
+                        part = parts.pop_front().ok_or(PfaError::MalformedPathError)?;
                     }
                     _ => {}
                 }
@@ -303,7 +303,7 @@ impl<T: Read + Seek> PfaReader<T> {
             }
 
             if let Some(0) = remaining_size {
-                return None;
+                return Ok(None);
             }
         }
     }
@@ -312,29 +312,29 @@ impl<T: Read + Seek> PfaReader<T> {
         &mut self,
         path: impl Into<PfaPath>,
         key: Option<[u8; 32]>,
-    ) -> Option<PfaFileContents> {
-        if let Some(PfaPathContents::File(f)) = self.get_path(path, key) {
-            return Some(f);
+    ) -> Result<Option<PfaFileContents>, PfaError> {
+        match self.get_path(path, key) {
+            Ok(Some(PfaPathContents::File(f))) => Ok(Some(f)),
+            Err(e) => Err(e),
+            _ => Ok(None),
         }
-
-        None
     }
 
     pub fn get_directory(
         &mut self,
         path: impl Into<PfaPath>,
         key: Option<[u8; 32]>,
-    ) -> Option<PfaDirectoryContents> {
+    ) -> Result<Option<PfaDirectoryContents>, PfaError> {
         let mut path: PfaPath = path.into();
         if !path.is_directory() {
-            path = path.append("")?; // append empty part to make it a directory
+            path = path.append("").ok_or(PfaError::MalformedPathError)?; // append empty part to make it a directory
         }
 
-        if let Some(PfaPathContents::Directory(d)) = self.get_path(path, key) {
-            return Some(d);
+        match self.get_path(path, key) {
+            Ok(Some(PfaPathContents::Directory(f))) => Ok(Some(f)),
+            Err(e) => Err(e),
+            _ => Ok(None),
         }
-
-        None
     }
 
     /// Warning: this function will only successfully traverse non-encrypted files
@@ -350,8 +350,8 @@ impl<T: Read + Seek> PfaReader<T> {
         ) {
             let contents = s.get_path(path, None);
             match contents {
-                Some(PfaPathContents::File(f)) => (callback)(f),
-                Some(PfaPathContents::Directory(d)) => {
+                Ok(Some(PfaPathContents::File(f))) => (callback)(f),
+                Ok(Some(PfaPathContents::Directory(d))) => {
                     for path in d.contents {
                         inner(s, path, callback);
                     }

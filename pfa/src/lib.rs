@@ -24,6 +24,9 @@ pub enum PfaError {
     #[error("PFA IO error: {0}")]
     IOError(#[from] std::io::Error),
 
+    #[error("Malformed path")]
+    MalformedPathError,
+
     #[error("invalid utf8 string: {0}")]
     StringDecodeError(#[from] FromUtf8Error),
 
@@ -106,6 +109,7 @@ mod tests {
         assert!(files.is_empty());
         let f = reader
             .get_file("/dir_name/dir/encrypted_file.txt", Some(encrypted_key))
+            .unwrap()
             .unwrap();
         assert_eq!(&f.get_name(), "encrypted_file.txt");
         assert_eq!(
