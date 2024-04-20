@@ -177,7 +177,9 @@ impl PfaBuilder {
                 .path()
                 .to_str()
                 .ok_or(PfaError::CustomError("Invalid file".into()))?
-                .to_string();
+                .to_string()
+                .replace('\\', "/")
+                .replace("//", "/");
             if fpath.starts_with(opath) {
                 fpath = fpath.replacen(opath, "", 1);
             }
