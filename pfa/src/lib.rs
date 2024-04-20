@@ -121,4 +121,14 @@ mod tests {
         );
         assert_eq!(f.get_contents(), [5; 80]);
     }
+
+    #[test]
+    fn test_include_directory() {
+        let mut builder = PfaBuilder::new("epic_name");
+        builder
+            .include_directory("./src", DataFlags::auto())
+            .unwrap();
+
+        let _ = builder.build().unwrap();
+    }
 }

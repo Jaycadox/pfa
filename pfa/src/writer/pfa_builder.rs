@@ -158,4 +158,36 @@ impl PfaBuilder {
             "called add_file but provided a directory".into(),
         ))
     }
+
+    pub fn include_directory(&mut self, path: &str, flags: DataFlags) -> Result<(), PfaError> {
+        let opath = path;
+        let path = std::path::Path::new(opath);
+        if !path.is_dir() {
+            return Err(PfaError::CustomError(
+                "called include_directory but provided a non-directory".into(),
+            ));
+        }
+
+        for f in ignore::Walk::new(path).flatten() {
+            if f.path().is_dir() {
+                continue;
+            }
+
+            let mut fpath = f
+                .path()
+                .to_str()
+                .ok_or(PfaError::CustomError("Invalid file".into()))?
+                .to_string();
+            if fpath.starts_with(opath) {
+                fpath = fpath.replacen(opath, "", 1);
+            }
+            self.add_file(
+                &fpath,
+                std::fs::read(f.path()).map_err(PfaError::IOError)?,
+                flags.clone(),
+            )?;
+        }
+
+        Ok(())
+    }
 }
