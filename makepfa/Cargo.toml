@@ -1,0 +1,7 @@
+[package]
+name = "makepfa"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+pfa = { path = "../pfa" }
