@@ -1,0 +1,19 @@
+[package]
+name = "pfadiff"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "pfadiff_lib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "pfadiff"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.86"
+clap = { version = "4.5.8", features = ["derive", "string"] }
+dmp = "0.2.0"
+pfa = { path = "../pfa" }
+rayon = "1.10.0"
