@@ -26,7 +26,7 @@ fn main() {
         pfa.include_directory(canon_path.to_str().unwrap(), DataFlags::auto())
             .unwrap();
         let bytes = pfa.build().unwrap();
-        let mut file = std::fs::File::create(&format!("{name}.pfa")).unwrap();
+        let mut file = std::fs::File::create(format!("{name}.pfa")).unwrap();
         file.write_all(&bytes).unwrap();
     } else {
         eprintln!("Directory '{directory_name}' not found");
