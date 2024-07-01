@@ -362,6 +362,34 @@ impl<T: Read + Seek> PfaReader<T> {
         inner(self, path.into(), &mut callback);
     }
 
+    /// Warning: this function will only successfully traverse non-encrypted files
+    /// Callback should return Err to cancel
+    /// Returns first propagated error, or () if there wassn't any
+    pub fn traverse_files_cancelable<E>(
+        &mut self,
+        path: impl Into<PfaPath>,
+        mut callback: impl FnMut(PfaFileContents) -> Result<(), E>,
+    ) -> Result<(), E> {
+        fn inner<T: Read + Seek, E>(
+            s: &mut PfaReader<T>,
+            path: PfaPath,
+            callback: &mut impl FnMut(PfaFileContents) -> Result<(), E>,
+        ) -> Result<(), E> {
+            let contents = s.get_path(path, None);
+            match contents {
+                Ok(Some(PfaPathContents::File(f))) => (callback)(f),
+                Ok(Some(PfaPathContents::Directory(d))) => {
+                    for path in d.contents {
+                        inner(s, path, callback)?;
+                    }
+                    Ok(())
+                }
+                _ => Ok(()),
+            }
+        }
+        inner(self, path.into(), &mut callback)
+    }
+
     fn read_sized_buffer(buf: &mut T) -> Result<Vec<u8>, PfaError> {
         let size = buf.read_u8()?;
         let mut str_buf = vec![0; size.into()];
