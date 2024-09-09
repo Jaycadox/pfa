@@ -97,7 +97,8 @@ impl PfaWriter {
     ) -> Result<(), PfaError> {
         if string.len() > size {
             return Err(PfaError::CustomError(format!(
-                "string of length {} is larger than max string size of {}",
+                "string '{}' of length {} is larger than max string size of {}",
+                string,
                 string.len(),
                 size
             )));
