@@ -43,7 +43,7 @@ pub enum PfaPath {
 }
 
 impl PfaPath {
-    const MAX_SIZE: usize = 80;
+    const MAX_SIZE: usize = 32;
 }
 
 #[derive(Clone, Debug)]
